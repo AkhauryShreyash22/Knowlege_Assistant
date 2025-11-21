@@ -2,6 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
+from drf_spectacular.utils import extend_schema, OpenApiTypes, OpenApiParameter
 
 from pypdf import PdfReader
 import chromadb
@@ -21,6 +22,24 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 
 class KnowledgeBaseDocumentUpload(APIView):
     parser_classes = (MultiPartParser, FormParser)
+    
+    @extend_schema(
+        summary="Upload a PDF, Markdown, or Text file",
+        request={
+            'multipart/form-data': {
+                'type': 'object',
+                'properties': {
+                    'file': {
+                        'type': 'string',
+                        'format': 'binary',
+                        'description': 'Upload PDF / MD / TXT'
+                    }
+                },
+                'required': ['file'],
+            }
+        },
+        responses={200: None},
+    )
 
     def post(self, request):
         file_obj = request.FILES.get("file")
