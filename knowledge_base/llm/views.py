@@ -10,8 +10,6 @@ from transformers import pipeline
 
 from functools import lru_cache
 import hashlib
-import json
-
 
 
 rag_llm = pipeline(
@@ -30,7 +28,6 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 
 
 def make_cache_key(question: str):
-    """Generate a stable key based on question text."""
     return hashlib.md5(question.strip().lower().encode()).hexdigest()
 
 
@@ -45,13 +42,20 @@ def cached_answer(question: str):
     )
 
     retrieved_chunks = results.get("documents", [[]])[0]
+    retrieved_metadata = results.get("metadatas", [[]])[0]
 
     if not retrieved_chunks:
         return {
-            "question": question,
             "answer": "Sorry, no relevant information found in the knowledge base.",
-            "chunks_used": 0
+            "sources": []
         }
+
+    sources_list = []
+    for meta in retrieved_metadata:
+        safe_meta = meta or {}
+        doc = safe_meta.get("source", "Unknown.pdf")
+        page = safe_meta.get("page", "N/A")
+        sources_list.append(f"{doc} - Page {page}")
 
     context = "\n\n".join(retrieved_chunks)
 
@@ -72,34 +76,20 @@ ANSWER:
     hf_response = rag_llm(prompt)
     answer = hf_response[0]["generated_text"].strip()
 
-    # ---------------------------------------------
-    # soft hallucination check (FIX)
-    # ---------------------------------------------
-    # check if ANY important keyword from question or context is missing
     question_keywords = [w.lower() for w in question.split() if len(w) > 4]
     context_lower = context.lower()
+    relevant = any(k in context_lower for k in question_keywords)
 
-    relevant = False
-    for k in question_keywords:
-        if k in context_lower:
-            relevant = True
-            break
-
-    # If context seems relevant → keep answer
-    if relevant:
+    if not relevant:
         return {
-            "question": question,
-            "answer": answer,
-            "chunks_used": len(retrieved_chunks)
+            "answer": "Sorry, no relevant information found in the knowledge base.",
+            "sources": sources_list
         }
 
-    # If context not relevant → fallback
     return {
-        "question": question,
-        "answer": "Sorry, no relevant information found in the knowledge base.",
-        "chunks_used": len(retrieved_chunks)
+        "answer": answer,
+        "sources": sources_list
     }
-
 
 
 class AskQuestionAPIView(APIView):
